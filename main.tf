@@ -1,4 +1,4 @@
-#Script to deploy ec2 into a subnet, within a VPC and network interface
+# #Script to deploy ec2 into a subnet, within a VPC and network interface
 
 terraform {
   required_providers {
@@ -17,6 +17,9 @@ provider "aws" {
 
 resource "aws_vpc" "custom_vpc" {
   cidr_block = "10.0.0.0/16"
+  tags = {
+    name = "main"
+  }
      
 }
 
@@ -33,7 +36,7 @@ resource "aws_route_table" "public" {
   vpc_id = aws_vpc.custom_vpc.id
 
   route {
-    cidr_block = "10.0.1.0/24"
+    cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.custom_gw.id
   }
 
@@ -57,42 +60,42 @@ resource "aws_route_table_association" "a" {
 }
 
 
-resource "aws_security_group" "allow" {
-  name        = "allow"
+resource "aws_security_group" "vpc" {
+ name        = "permission for VPC"
   description = "Allow TLS inbound traffic and all outbound traffic"
   vpc_id      = aws_vpc.custom_vpc.id
 
-  tags = {
-    Name = "allow_tls"
+  ingress {
+    from_port        = 22
+    to_port          = 22
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
   }
+
+   ingress {
+    from_port        = 80
+    to_port          = 80 
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+
+  }
+
+   ingress {
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    
+  }
+
 }
 
-resource "aws_vpc_security_group_ingress_rule" "allow_ssh" {
-  security_group_id = aws_security_group. allow.id
-  cidr_ipv4         = aws_vpc.main.cidr_block
-  from_port         = 443
-  ip_protocol       = "tcp"
-  to_port           = 443
-}
 
-resource "aws_vpc_security_group_ingress_rule" "allow_tls_ipv6" {
-  security_group_id = aws_security_group.allow_tls.id
-  cidr_ipv6         = aws_vpc.main.ipv6_cidr_block
-  from_port         = 443
-  ip_protocol       = "tcp"
-  to_port           = 443
-}
-
-resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv4" {
-  security_group_id = aws_security_group.allow_tls.id
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1" # semantically equivalent to all ports
-}
-
-resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv6" {
-  security_group_id = aws_security_group.allow_tls.id
-  cidr_ipv6         = "::/0"
-  ip_protocol       = "-1" # semantically equivalent to all ports
+resource "aws_eip" "one" {
+  domain                    = "vpc"
+  network_interface         = aws_network_interface.main.id
+  depends_on                = [aws_internet_gateway.custom_gw]
+  associate_with_private_ip = "10.0.1.57"
 }
 
 
@@ -113,24 +116,28 @@ resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv6" {
 
 
 
-
-
-
-
+resource "aws_key_pair" "deployer" {
+  key_name   = "deployer-key"
+  public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDOljUMVeoE4DnxOiZwyECc19obQsYT0MJideH4U/I8cyvbHMiAx5QC9cavh7ak9DpEwogjKICXCBnljbHLm6/2xOiWkswZbVgUMn9ATbXbZhgestNcoAdY4LJwpF0T8QewYIuC2oHnCc3MHfK9KFjqSF8HDxv7tW6I/550rYChKj423uRBRm9sqbWKAzfvh+qQ1IHefQZ9vw7ilx9LVmW+RLaJLWxVvJhPUssB9DVXXqTVo8TkP8qtkjaKL2swXbbstCO6P1cnzGXbM/Nhmp1J7fiFIgvFjjA3HiiF+BUTEeNIZoyeaaAFcLMxeSevDQ99Dhad0UyJ4q2b7nO/VMefipEJ2MKdF7BBb6mjqSuSviw2UCY4Bu+M9bjZx2JPqEYI4uzsh/zCnEmgGX73WrHf9IOniPXdohiI1KLREsPaYJMoO9PckcipJPR4ZRJJUsCZECVDdpIYwyUkq0gwYLHcbqdBjbbKwF3koiZvWe/myq5eI3AWChmYV3yUYE49D6k= patri@DESKTOP-C1I06IV"
+}
 
 
 resource "aws_network_interface" "main" {
   subnet_id   = aws_subnet.public_subnet.id
-  private_ips = ["10.0.1.30"]
+  # public_ips = ["10.0.1.37"]
+  private_ips     = ["10.0.1.57"]
+  security_groups = [aws_security_group.vpc.id]
 
   tags = {
-    Name = "primary_network_interface"
+    name = "primary_network_interface"
   }
 }
 
 resource "aws_instance" "linux" {
   ami           = "ami-07d9b9ddc6cd8dd30" # us-west-2
   instance_type = "t2.micro"
+  key_name = "deployer-key"
+  
 
   network_interface {
     network_interface_id = aws_network_interface.main.id
@@ -140,13 +147,33 @@ resource "aws_instance" "linux" {
   credit_specification {
     cpu_credits = "unlimited"
   }
+
+tags = {
+
+  name = "Linux"
+}
+
+  user_data = <<EOF
+  
+  !#/bin/bash
+  sudo apt update
+  sudo apt upgrade
+  sudo apt install apache2
+  echo "<html> Hellow world </html>" > /var/www/html/index.html
+
+  sudo adduser test
+
+  username = test
+
+  sudo usermod -aG sudo $username
+
+  #set user password
+
+  sudo passwd $username
+
+  EOF
+
 }
 
 
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.my_vpc.id
 
-  tags = {
-    Name = "main"
-  }
-}
