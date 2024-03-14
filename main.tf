@@ -85,6 +85,7 @@ resource "aws_security_group" "vpc" {
     to_port          = 443
     protocol         = "tcp"
     cidr_blocks      = ["0.0.0.0/0"]
+   }
 
     ingress {
     from_port        = 443
@@ -159,7 +160,7 @@ tags = {
   name = "Linux"
 }
 
-  user_data = <<EOF
+  user_data = << EOF
   
   #!/bin/bash
   sudo apt update
@@ -167,15 +168,13 @@ tags = {
   sudo apt install apache2
   echo "<html> Hellow world </html>" > /var/www/html/index.html
 
-  sudo adduser test
+  USERNAME = test
+  
+  sudo adduser $USERNAME
 
-  username = test
-
-  sudo usermod -aG sudo $username
+  sudo usermod -aG sudo $USERNAME
 
   #set user password
-
-  sudo passwd $username
 
   EOF
 
